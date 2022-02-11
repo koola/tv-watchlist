@@ -1,0 +1,94 @@
+name: Watchlist
+
+# Runs at 00:00 UTC on Monday
+#on:
+#  schedule:
+#    - cron:  '0 0 * * 1'
+
+on: [push]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    container: alpine/git:latest
+    env:
+      checksum: ".checksums"
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Container setup
+        run: apk add --no-cache curl jq
+
+      - name: Bybit Markets
+        run: |
+          curl -sSL "https://api.bybit.com/v2/public/symbols" > bybit.out
+          jq -r '[.result[] | select(.quote_currency == "USDT" and .status == "Trading")] | sort_by(.name) | map(["BYBIT", .name] | join(":")) | join(",")' bybit.out > Bybit_USDT.csv
+          jq -r '[.result[] | select(.quote_currency == "USD" and .status == "Trading")] | sort_by(.name) | map(["BYBIT", .name] | join(":")) | join(",")' bybit.out > Bybit_USD.csv
+
+      - name: FTX Markets
+        run: |
+          curl -sSL "https://ftx.com/api/markets" > ftx.out
+          jq -r '[.result[] | select(.name | test(".*-PERP"))] | sort_by(.name) | map(["FTX", .underlying+"PERP"] | join(":")) | join(",")' ftx.out > FTX_PERP.csv
+          jq -r '[.result[] | select(.quoteCurrency == "USD" and .type == "spot")] | sort_by(.name) | map(["FTX", .name | sub("/"; ""; "g")] | join(":")) | join(",")' ftx.out > FTX_USD.csv
+          jq -r '[.result[] | select(.quoteCurrency == "USDT" and .type == "spot")] | sort_by(.name) | map(["FTX", .name | sub("/"; ""; "g")] | join(":"))' ftx.out > FTX_USDT.csv
+
+      - name: KuCoin Markets
+        run: |
+          curl -sSL "https://api.kucoin.com/api/v1/symbols" > kucoin.out
+          jq -r '[.data[] | .market] | unique' kucoin.out
+          jq -r '[.data[] | select(.quoteCurrency == "BTC")] | sort_by(.name) | map(["KUCOIN", .symbol | sub("-"; ""; "g")] | join(":")) | join(",")' kucoin.out > Kucoin_BTC.csv
+          jq -r '[.data[] | select(.quoteCurrency == "ETH")] | sort_by(.name) | map(["KUCOIN", .symbol | sub("-"; ""; "g")] | join(":")) | join(",")' kucoin.out > Kucoin_ETH.csv
+          jq -r '[.data[] | select(.quoteCurrency == "USDT")] | sort_by(.name) | map(["KUCOIN", .symbol | sub("-"; ""; "g")] | join(":")) | join(",")' kucoin.out > Kucoin_USDT.csv
+
+      - name: Validate checksums
+        id: checksums
+        run: cat $checksum | sha1sum -c && exit 0 || echo ::set-output name=match::true
+
+      - name: Generate checksums
+        if: steps.checksums.outputs.match == 'true'
+        run: sha1sum *.csv > $checksum
+
+      - name: Generate version
+        if: steps.checksums.outputs.match == 'true'
+        id: version
+        run: echo ::set-output name=sha::${GITHUB_SHA::8}
+
+      - name: Commit checksums
+        if: steps.checksums.outputs.match == 'true'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add $checksum
+          git commit -m 'Update checksums' --author="github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          git push origin main
+          git tag ${{ steps.version.outputs.sha }}
+          git tag latest
+          git push --tags --force
+
+      - name: Create release
+        if: steps.checksums.outputs.match == 'true'
+        run: |
+          curl -sSL \
+          -H "Content-Type:application/vnd.github.v3+json" \
+          -H "Authorization: token ${{ secrets.TOKEN }}" \
+          -d '{"tag_name":"${{ steps.version.outputs.sha }}","name": "watchlists"}' "https://api.github.com/repos/$GITHUB_REPOSITORY/releases" | jq -r '"asset_id=\(.id)"' >> $GITHUB_ENV
+
+      - name: Upload watchlists
+        if: steps.checksums.outputs.match == 'true'
+        run: |
+          for asset in *.csv;
+          do curl -sSL \
+          -H "Content-Type:application/vnd.github.v3+json" \
+          -H "Authorization: token ${{ secrets.TOKEN }}" \
+          --data-binary @${asset} \
+          "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/${{ env.asset_id }}/assets?name=${asset}&label=${asset//.csv}" | jq '.browser_download_url';
+          done
+
+#      - name: release
+#        if: steps.checksums.outputs.match == 'true'
+#        uses: softprops/action-gh-release@v1
+#        with:
+#          tag_name: ${{ steps.version.outputs.sha }}
+#          release_name: watchlist
+#          files: *.csv
+
