@@ -1,9 +1,9 @@
 name: Watchlist
 
-# Runs at 00:00 UTC on Monday
+# Runs at 00:00 UTC on every 2nd day-of-week from Monday through Saturday
 on:
   schedule:
-    - cron:  '0 0 * * 1'
+    - cron:  '0 0 * * 1-6/2'
 
 jobs:
   update:
@@ -37,6 +37,12 @@ jobs:
           jq -r '[.data[] | select(.quoteCurrency == "BTC")] | sort_by(.name) | map(["KUCOIN", .symbol | sub("-"; ""; "g")] | join(":")) | join(",")' kucoin.out > Kucoin_BTC.csv
           jq -r '[.data[] | select(.quoteCurrency == "ETH")] | sort_by(.name) | map(["KUCOIN", .symbol | sub("-"; ""; "g")] | join(":")) | join(",")' kucoin.out > Kucoin_ETH.csv
           jq -r '[.data[] | select(.quoteCurrency == "USDT")] | sort_by(.name) | map(["KUCOIN", .symbol | sub("-"; ""; "g")] | join(":")) | join(",")' kucoin.out > Kucoin_USDT.csv
+
+      - name: Phemex Markets
+        run: |
+          curl -sSL "https://api.phemex.com/public/products" > phemex.out
+          jq -r '[.data.products[] | select(.quoteCurrency == "USD" and .status == "Listed") | select(.indexSymbol | IN(".cETH",".uBTC") | not)] | sort_by(.baseCurrency) | map(["PHEMEX", .symbol+"PERP"] | join(":")) | join(",")' phemex.out > Phemex_PERP.csv
+          jq -r '[.data.products[] | select(.quoteCurrency == "USDT" and .status == "Listed")] | sort_by(.baseCurrency) | map(["PHEMEX", .baseCurrency + .quoteCurrency] | join(":")) | join(",")' phemex.out > Phemex_USDT.csv
 
       - name: Validate checksums
         id: checksums
