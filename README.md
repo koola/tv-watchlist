@@ -5,7 +5,6 @@
 Auto generated Tradingview watchlists for exchanges:
 
 - Bybit
-- FTX
 - KuCoin
 - Phemex
 

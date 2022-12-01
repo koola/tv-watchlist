@@ -23,13 +23,6 @@ jobs:
           jq -r '[.result[] | select(.quote_currency == "USDT" and .status == "Trading")] | sort_by(.name) | map(["BYBIT", .name] | join(":")) | join(",")' bybit.out > Bybit_USDT.csv
           jq -r '[.result[] | select(.quote_currency == "USD" and .status == "Trading")] | sort_by(.name) | map(["BYBIT", .name] | join(":")) | join(",")' bybit.out > Bybit_USD.csv
 
-      - name: FTX Markets
-        run: |
-          curl -sSL "https://ftx.com/api/markets" > ftx.out
-          jq -r '[.result[] | select(.name | test(".*-PERP"))] | sort_by(.name) | map(["FTX", .underlying+"PERP"] | join(":")) | join(",")' ftx.out > FTX_PERP.csv
-          jq -r '[.result[] | select(.quoteCurrency == "USD" and .type == "spot")] | sort_by(.name) | map(["FTX", .name | sub("/"; ""; "g")] | join(":")) | join(",")' ftx.out > FTX_USD.csv
-          jq -r '[.result[] | select(.quoteCurrency == "USDT" and .type == "spot")] | sort_by(.name) | map(["FTX", .name | sub("/"; ""; "g")] | join(":"))' ftx.out > FTX_USDT.csv
-
       - name: KuCoin Markets
         run: |
           curl -sSL "https://api.kucoin.com/api/v1/symbols" > kucoin.out
